@@ -1,0 +1,328 @@
+\documentclass[10pt]{article} %
+\usepackage{fullpage}
+\usepackage{graphicx}
+\usepackage{graphics}
+\usepackage{psfrag}
+\usepackage{amsmath,amssymb}
+\usepackage{enumerate}
+
+\setlength{\textwidth}{6.5in}
+\setlength{\textheight}{9in}
+
+\newcommand{\rinline}[1]
+%% begin.rcode setup, include=FALSE
+% require(microbenchmark)
+% set.seed(0)
+% library(knitr)
+% opts_chunk$set(fig.width = 5, fig.height = 5)
+%% end.rcode
+
+\title{Stat 243--Intro to Computing\\
+  Final Project}
+\date{Due: December 17, 2015}
+\author{\Large Pi-Feng Chiu, Juanyan Li, Jamie Palumbo, Weiyan Shi}
+
+\begin{document}
+\maketitle
+
+\section{Description of Code}
+\subsection{Inputs}
+The sequential nature of the adaptive rejection sampling technique led our group
+to a very modular design approach. It follows that the main \textit{ars} function
+is comprised primarily of calls to other functions in a specific sequential order.
+The \textit{ars} function takes several inputs: a univariate, continuous, 
+log-concave density function \textit{f}, a lower bound \textit{lb} and an upper 
+bound \textit{ub} for the distribution, the sample size \textit{n}, a tolerance, 
+and any additional arguments that might be necessary in specifying the distribution. 
+If the function input is a user-defined function, the function they input must 
+include $log$ as a $TRUE$ or $FALSE$ argument. Before stepping into the heart of 
+the ars calculation, the inputs are checked for validity. These validity checks 
+stop the function from proceeding if it receives non-numeric inputs, non-positive 
+sample size or tolerance, lower bound that is greater than the upper bound, or 
+non-finite integration.
+
+\subsection{Initialization Step}
+Once the inputs pass these validity checks, the initialization step begins.
+First, the starting points, or abscissae, are chosen based on the mode of the
+given distribution and the bounds passed by the user. The \textit{choose\textunderscore init}
+function ensures that the starting points include the mode of the distribution
+in addition to one point to the left of the mode and one point to the right of the
+mode. These left and right hand side points are chosen to be relatively close to
+the mode and must be within the range of the upper and lower bounds of the
+specified distribution. While the user may input a value for the distance away
+from the mode each of these points will be, the default value, which worked
+very well in our testing, is 0.1. These starting points must pass the requirement
+for log-concavity before the function can continue. The \textit{check\textunderscore logconcave}
+function ensures that the second derivative at $x$ is non-positive. Warning
+messages are returned if the point being checked is outside the lower and upper
+bounds, if the first derivative cannot be computed, or if the point is very
+close to the mode or the upper and lower bounds since these cases will return
+strange values. Next, \textit{intersection}, \textit{upperhull}, and
+\textit{lowerhull} calculate exactly what their names imply based on the equations
+listed in the journal article and rudimentary algebra. The functions return the
+intersection points along with the slopes and intercepts of each of the line segments.
+
+\subsection{Sampling and Updating Steps}
+Having completed the initialization step, the sampling and updating steps may
+begin. Sampling will continue until a certain sample size is reached. The
+\textit{sampleX} function finds a potential sample value that can be either
+accepted into the sample or rejected. The function itself integrates over each
+of the segment sections, dividing over the total area for normalization and
+calculating the cdf from these areas. A random sample from a standard uniform
+distribution is taken in order to select the segment to sample from and then
+solved for the sample value $x$ using the inverse cdf method. The upperhull and
+lowerhull are then evaluated at the sample value $x$ in \textit{bndeval}. Finally,
+\textit{srtest} performs the squeeze and rejection tests explained in the text
+and returns a boolean to indicate whether the sample value passed either of
+these tests. If the sample point is accepted, then it is added to the list of
+sample values. Otherwise, the value is added to $T_k$ and a rejection test is run.
+Each of the vectors is then updated according to whether the $x$ value is inserted
+at the beginning, middle, or end of the vector.
+
+
+
+\section{Description of Testing}
+\subsection{Unit Tests}
+Before testing the main \textit{ars} function, we conducted several unit tests
+to ensure that our functions were working properly. These unit tests can be
+found in \textit{test-unit.R} which is located in the tests directory.\\
+\\
+First, we tested the \textit{choose\textunderscore init} function, demonstrating
+three different cases that can occur and using dnorm as our model. The three
+cases are when the interval is unbounded, finite and covers the mode, and finite
+and does not cover the mode. We see that the initial points chosen for each of
+these cases are within the boundary limits and are, thus, valid starting values.
+Therefore, this function appears to be performing as expected.\\
+\\
+Second, we tested the \textit{check\textunderscore logconcave} function, again
+using dnorm as our model for the majority of the tests in addition to an
+exponential function. The \textit{check\textunderscore logconcave} function
+found that log-concavity held true for dnorm at its boundaries when these
+boundaries were defined to be infinite, finite and covering the mode, and finite
+and not covering the mode. Log-concavity also held true at values close to the
+mode for each of these cases. We also tested a case in which the function was not
+log-concave. Our function returned a boolean to indicate that $e^{x^2}$ was not
+log-concave at a certain point. For the purposes of testing, we withheld any error
+or warning messages that our function produced since they were coded into our
+function and were working properly. Overall, this function appears to be
+performing correctly.\\
+\\
+Third, we performed a unit test for the \textit{update} function. We considered
+placing the new sample point at the beginning, middle, and end of the vector.
+We found that in each of these cases, the new element was placed in the correct
+location. Therefore, this function also appears to be performing correctly.\\
+\\
+Fourth, we performed a unit test to encompass the \textit{upperhull},
+\textit{lowerhull}, and \textit{intersection} funtions. Performing each of these
+functions on a test case, we graphed the outputs and found that the line segments
+for both the upperhull and lowerhull in addition to the intersection points
+appear to be calculated correctly. Therefore, we are confident that these
+functions are performing as expected.
+
+%% begin.rcode r-plot1, echo=FALSE
+%suppressWarnings(test_hulls())
+%%end.rcode
+
+\subsection{Main Tests}
+Once we felt confident that our helper functions were running properly, we began
+our main test of the \textit{ars} function. This main test can be found in 
+\textit{test-main.R} which is located in the tests directory. We compared our 
+sampled distribution to the true distribution for the functions dnorm, dgamma, 
+dbeta, dlogis, dexp, dchisq, dunif, and dweibull. For each distribution, we input 
+bounds that included the entire domain and bounds that did not cover the mode to 
+ensure that both cases ran smoothly. Each test generated a plot with our sampled 
+pdf, true pdf, and the histogram of our sample. In each of the cases, our sampled 
+pdf seemed to very closely follow the true pdf. We have included examples for each 
+distribution including the entire domain below to illustrate how well our main 
+tests run. For more examples, please refer to the tests file. 
+
+%% begin.rcode r-plot2, echo=FALSE, fig.height=4, warning=FALSE
+%library(PtProcess)
+%compare_pdf <- function(f,s,limit=0.001,...){
+%
+%  hist(s, prob=TRUE,main = paste("Comparison with the real PDF",...), font.main=4,xlab='x',breaks=50)  
+%# prob=TRUE for probabilities not counts
+%  lines(density(s, adjust=2), lty="dotted")
+%
+%  x<-seq(min(s),max(s),limit)
+%  fx <- f(x,...)
+%  lines(x,fx,col='red')
+%
+%  legend("topright",legend = c('real pdf','sample pdf'),
+%         lty=c(1,2),col=c('red','black'))
+%}
+%
+%test_main <- function(){
+%
+%  print("#######################################################################")
+%  print("This is the main test for the ars package.")
+%  print("#######################################################################")
+%
+%  count <- 1000
+%
+%  print("Demonstrate five cases of ars function.")
+%
+%  print("==========**********__________dnorm_____________**********============")
+%  print("Case 1: dnorm; mean=2,sd=2,lowerbound=-Inf,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dnorm,n=count,mean=2,sd=2)
+%  compare_pdf(dnorm,s1,mean=2,sd=2)
+%
+%  print("==========**********__________dgamma_____________**********============")
+%  print("Case 1: dgamma; shape=2,lowerbound=0,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dgamma,n=count,shape=2,lb=0)
+%  compare_pdf(dgamma,s1,shape=2)
+%
+%  print("==========**********__________dbeta_____________**********============")
+%  print("Case 1: dbeta; shape1=2,shape2=2, lowerbound=0,upperbound=1(the entire domain)")
+%  s1 <- ars(dbeta,n=count,shape1=9,shape2=2,lb=0,ub=1)
+%  compare_pdf(dbeta,s1,shape1=9,shape2=2)
+%
+%  print("==========**********__________dlogis_____________**********============")
+%  print("Case 1: dlogis; scale=1,lowerbound=-Inf,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dlogis,n=count)
+% compare_pdf(dlogis,s1)
+%
+%  print("==========**********__________dexp_____________**********============")
+%  print("Case 1: dexp; rate=1,lowerbound=0,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dexp,n=count,lb=0)
+%  compare_pdf(dexp,s1)
+%
+%  print("==========**********__________dchisq_____________**********============")
+%  print("Case 1: dchisq(df=3); lowerbound=-Inf,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dchisq,n=count,df=3)
+%  compare_pdf(dchisq,s1,df=3)
+% 
+%  print("==========**********__________dunif_____________**********============")
+%  print("Case 1: dunif(0,1),lowerbound=0,upperbound=1(the entire domain)")
+%  s1 <- ars(dunif,n=1000,lb=0,ub=1)
+%  compare_pdf(dunif,s1)
+%  
+%  print("==========**********__________dweibull_____________**********============")
+%  print("Case 1: dweibull,shape=1,lowerbound=0,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dweibull,n=1000,lb=0,shape=1)
+%  compare_pdf(dweibull,s1,shape=1)
+%
+%  print("PASS!")
+%}
+%test_main()
+%%end.rcode
+
+Additionally, we tested dbeta in which the upperbound was not legitimate, and 
+we tested dpareto in which the density function was not log-concave. Both of 
+these cases returned an error message, catching the error and ending evaluation 
+of the function as shown below. Additional non-log-concave functions may be found
+in the test file itself. 
+
+%% begin.rcode r-plot3, echo=FALSE, fig.height=4
+%test_error1 <- function(){
+%  print("-----------------------------------------------------------------------")
+%  print("Case 1: dbeta; shape1=9,shape2=2, lowerbound=0,upperbound=Inf(the upperbound is not legitimate, should give an   error)")
+%  s1 <- ars(dbeta,n=100,shape1=9,shape2=2,lb=0)#give an error indicating the upper and lower bounds are not correct
+%  compare_pdf(dbeta,s1,shape1=9,shape2=2)
+%}
+%
+%test_error2 <- function(){
+%  print("==========**********__________dpareto_____________**********============")
+%  print("Case 2: dpareto is not log-concave, and we catch the error!")
+%  s1 <- ars(dpareto,a=1,lambda=1,n=100,lb=1)
+%}
+%
+%suppressWarnings(test_error1())
+%test_error2()
+%%end.rcode
+
+Finally, we have also included tests of user-defined functions, including the  
+Laplace and Subbotin distributions. Again, we will reiterate that user-defined 
+functions must have an argument indicating whether $log$ is $TRUE$ or $FALSE$. 
+The results of these tests are found below. 
+
+%% begin.rcode r-plot4, echo=FALSE, fig.height=4
+%dlaplace <- function(x,mu=0,b=1,log=FALSE){
+%  if(!log){
+%    return ((1/(2*b))*exp(-abs(x-mu)/b))
+%  }
+%  
+%  else{
+%    return (log(1/(2*b))-(abs(x-mu)/b))
+%  }
+%  
+%}
+%
+%dsubbotin <- function(x,r=1,log=FALSE){
+%  #r must be >=1 to be log concave
+%  C <- 2*gamma(1/r)*r^(1/r-1)
+%  if(!log){
+%    return (1/C*(exp(-abs(x^r)/r)))
+%  }
+%  else {
+%    return (log(1/C)+(-abs(x^r)/r))
+%  }
+%  
+%}
+%
+%test_user_defined <- function(){
+%  print("==========**********__________dpareto_____________**********============")
+%  print("Case 1: dlaplace; lowerbound=-Inf,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dlaplace,n=1000)
+%  compare_pdf(dlaplace,s1)
+%
+%  print("==========**********__________dsubbotin_____________**********============")
+%  print("Case 1: dsubbotin; lowerbound=-Inf,upperbound=Inf(the entire domain)")
+%  s1 <- ars(dsubbotin,n=1000,r=2)
+%  compare_pdf(dsubbotin,s1)
+%}
+%
+%test_user_defined()
+%%end.rcode
+
+
+
+\subsection{Timing}
+Lastly, we checked the computational efficiency of our code. For a sample size 
+of 10,000 and the dnorm distribution, we found that our code took approximately 
+4.59 seconds to run. The sampling step appeared to take up the majority of this 
+time at 84\%, followed by the updating step at 13\%, and then the initialization step 
+at 3\%. The function that mainly affected the timing was the \textit{sampleX} function
+coming in at 2.85 seconds which was approximately 74\% of the sampling step. 
+This is probably due to the fact that we must call this function every single time
+to get a new sample value, and this sample value may not even be accepted into our
+overall sample. 
+
+%% begin.rcode r-plot5, echo=FALSE, fig.height=3.5
+%slices <- c(3.86, 0.60, 0.13)
+%lbls <- c("Sampling Step", "Updating Step", "Initialization/others")
+%pct <- round(slices/sum(slices)*100)
+%lbls <- paste(lbls, pct) # add percents to labels
+%lbls <- paste(lbls,"%",sep="") # ad % to labels
+%pie(slices,labels = lbls, col=rainbow(length(lbls)),
+%    main="Computation Distribution (n=10000, t=4.59s)")
+%
+%
+%slices <- c(0.10, 2.85, 0.40,0.20,0.31)
+%lbls <- c("FindInterval()", "sampleX()", "sort z","bndeval()/srtest()","others")
+%pct <- round(slices/sum(slices)*100)
+%lbls <- paste(lbls, pct) # add percents to labels
+%lbls <- paste(lbls,"%",sep="") # ad % to labels
+%pie(slices,labels = lbls, col=rainbow(length(lbls)),
+%    main="Sampling Step (n=10000, t=3.86s)")
+%%end.rcode
+
+
+\section{Team Contributions}
+Each member of the team contributed fairly to the project. Each member was
+involved in developing the stucture of the code, debugging errors, improving
+efficiency, and carrying out tests. Since the code was modular in nature, the
+steps involved in adaptive rejection sampling were divided among the team members.
+In particular, Pi-Feng created the functions involved in calculation of the
+envelope and squeeze in addition to the updating step. Juanyan created
+the functions involved in acceptance and rejection of the sample value. Jamie
+created the sampling function and wrote up the pdf of the solution and the
+help page for the ars function. Finally, Weiyan created the functions to determine
+the initial starting values and check for log concavity.
+
+
+
+\section{Github Respository }
+The final version of the project can be found in Pi-Feng Chiu's respository at
+pfchiu.
+\end{document}
